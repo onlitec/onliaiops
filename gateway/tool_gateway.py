@@ -18,6 +18,7 @@ SERVER_TARGETS = {
     "pve2": "192.168.0.235",
     "pve-2-gerencial": "192.168.0.235",
     "pve2-onlitec": "172.20.120.128",
+    "pve2.onlitec.corp": "172.20.120.128",
     "pdm": "127.0.0.1",
     "pdm-onlitec-local": "127.0.0.1",
     "pbs": "100.100.4.115",
@@ -32,6 +33,9 @@ SERVER_TARGETS = {
     "truenas-scale-1-esqualyvale": "100.104.220.102"
 }
 
+# Credenciais Dedicadas do ONLI-AIOPS (Zero-Root Policy)
+PBS_TOKEN = "onliaiops@pbs!AIOPS-TOKEN:ec6e28d2-d37c-4990-8fa8-28cf64a738a8"
+
 class ToolGateway:
     def __init__(self):
         self.ctx = ssl.create_default_context()
@@ -41,13 +45,13 @@ class ToolGateway:
     def _resolve_ip(self, host: str) -> str:
         return SERVER_TARGETS.get(host.lower(), host)
 
-    def _execute_ssh(self, host_ip: str, cmd: str, user: str = "alfreire", timeout: int = 15) -> dict:
+    def _execute_ssh(self, host_ip: str, cmd: str, user: str = "onliaiops", timeout: int = 15) -> dict:
         # Segurança: Bloquear comandos destrutivos
         cmd_lower = cmd.lower()
         if any(f in cmd_lower for f in FORBIDDEN_COMMANDS):
             return {
                 "success": False,
-                "error": f"BLOQUEIO DE SEGURANÇA: O comando contém instrução destrutiva proibida.",
+                "error": "BLOQUEIO DE SEGURANÇA: O comando contém instrução destrutiva proibida.",
                 "command": cmd
             }
 
@@ -59,7 +63,7 @@ class ToolGateway:
             except Exception as e:
                 return {"success": False, "error": str(e)}
 
-        # Se for MikroTik
+        # Se for MikroTik (MikroTik usa usuário alfreire)
         if host_ip == "172.20.120.1":
             ssh_cmd = ["ssh", "-p", "2222", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=5", f"alfreire@{host_ip}", cmd]
         else:
@@ -82,39 +86,39 @@ class ToolGateway:
     def consultar_servidor(self, host: str) -> dict:
         ip = self._resolve_ip(host)
         cmd = "hostname && uptime && free -h && df -h /"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 2. Consultar CPU
     def consultar_cpu(self, host: str) -> dict:
         ip = self._resolve_ip(host)
         cmd = "top -b -n 1 | head -n 15"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 3. Consultar Memória
     def consultar_memoria(self, host: str) -> dict:
         ip = self._resolve_ip(host)
         cmd = "free -m && vmstat 1 2"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 4. Consultar Disco e I/O
     def consultar_disco(self, host: str) -> dict:
         ip = self._resolve_ip(host)
-        cmd = "df -hT && (zpool list 2>/dev/null || true) && (iostat -xz 1 2 2>/dev/null || true)"
-        return self._execute_ssh(ip, cmd)
+        cmd = "df -hT && (sudo zpool list 2>/dev/null || true) && (iostat -xz 1 2 2>/dev/null || true)"
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 5. Consultar Logs de Serviço
     def consultar_logs(self, host: str, service: str, lines: int = 30) -> dict:
         ip = self._resolve_ip(host)
         lines = min(int(lines), 100)
         cmd = f"sudo journalctl -u {service} -n {lines} --no-pager"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 6. Consultar Processos
     def consultar_processos(self, host: str, top_n: int = 10) -> dict:
         ip = self._resolve_ip(host)
         top_n = min(int(top_n), 30)
         cmd = f"ps aux --sort=-%cpu | head -n {top_n + 1}"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 7. Testar Ping
     def testar_ping(self, target_ip: str, count: int = 3) -> dict:
@@ -141,10 +145,9 @@ class ToolGateway:
     # 9. Reiniciar Serviço Seguro
     def reiniciar_servico(self, host: str, service: str) -> dict:
         ip = self._resolve_ip(host)
-        # Proteção contra injeção
         service = "".join(c for c in service if c.isalnum() or c in "-_.")
         cmd = f"sudo systemctl restart {service} && sleep 2 && sudo systemctl is-active {service}"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
     # 10. Consultar Proxmox VE
     def consultar_proxmox(self, host: str, resource: str = "vms") -> dict:
@@ -155,12 +158,26 @@ class ToolGateway:
             cmd = "sudo pvesm status"
         else:
             cmd = "sudo pveversion && sudo pvesubscription get 2>/dev/null || true"
-        return self._execute_ssh(ip, cmd)
+        return self._execute_ssh(ip, cmd, user="onliaiops")
 
-    # 11. Consultar MikroTik
+    # 11. Consultar Proxmox Backup Server (PBS API com Token onliaiops)
+    def consultar_pbs(self, resource: str = "status") -> dict:
+        base = "https://100.100.4.115:8007/api2/json"
+        headers = {"Authorization": f"PBSAPIToken={PBS_TOKEN}"}
+        try:
+            if resource == "datastore":
+                url = f"{base}/admin/datastore/STORAGEBOX-01/status"
+            else:
+                url = f"{base}/nodes/localhost/status"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, context=self.ctx, timeout=8) as r:
+                return {"success": True, "data": json.loads(r.read().decode()).get("data")}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # 12. Consultar MikroTik
     def consultar_mikrotik(self, command: str) -> dict:
         cmd_clean = command.strip()
-        # Impedir alterações no MikroTik via gateway
         if any(w in cmd_clean.lower() for w in ["remove", "disable", "set", "add", "reset"]):
             return {"success": False, "error": "Comandos de modificação no MikroTik exigem aprovação e não podem ser rodados diretamente."}
         return self._execute_ssh("172.20.120.1", cmd_clean, user="alfreire")
