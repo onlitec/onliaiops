@@ -1,0 +1,24 @@
+# Python / Virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Runtime Data & Secrets
+data/config.json
+data/incidents.json
+.env
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo

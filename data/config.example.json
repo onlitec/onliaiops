@@ -1,0 +1,12 @@
+{
+  "provider": "claude",
+  "api_key": "YOUR_API_KEY_HERE",
+  "model": "claude-3-5-haiku-20241022",
+  "base_url": "",
+  "temperature": 0.2,
+  "autonomy_level": "CONTROLLED",
+  "auto_approval_max_risk": "BAIXO",
+  "max_retries_per_service": 2,
+  "is_active": true,
+  "custom_system_prompt": ""
+}

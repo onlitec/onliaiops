@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ONLI-AIOPS — Painel de Gestão & Central de Incidentes</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h2>ONLI-AIOPS</h2>
+          <span>Autonomic SRE Engine</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="tab-overview">
+          <span class="nav-icon">📊</span> Visão Geral
+        </button>
+        <button class="nav-item" data-tab="tab-incidents">
+          <span class="nav-icon">🚨</span> Central de Incidentes
+          <span class="badge" id="badge-incidents" style="display:none;">0</span>
+        </button>
+        <button class="nav-item" data-tab="tab-queue">
+          <span class="nav-icon">⏳</span> Fila de Aprovação
+          <span class="badge badge-orange" id="badge-pending" style="display:none;">0</span>
+        </button>
+        <button class="nav-item" data-tab="tab-ai-config">
+          <span class="nav-icon">🤖</span> Provedores & IA
+        </button>
+        <button class="nav-item" data-tab="tab-prompts">
+          <span class="nav-icon">📝</span> Prompts & Runbooks
+        </button>
+        <button class="nav-item" data-tab="tab-autonomy">
+          <span class="nav-icon">🛡️</span> Autonomia & Regras
+        </button>
+        <button class="nav-item" data-tab="tab-chat">
+          <span class="nav-icon">💬</span> Terminal IA
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <span class="status-dot green"></span>
+          <span id="agent-status-text">Claude Sonnet 4.5 Ativo</span>
+        </div>
+        <a href="http://100.111.29.8:3000" target="_blank" class="grafana-link">
+          📈 Abrir Grafana ↗
+        </a>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      <!-- TOP HEADER -->
+      <header class="top-header">
+        <div class="header-left">
+          <h1 id="page-title">Visão Geral da Operação</h1>
+          <p id="page-subtitle">Status em tempo real, monitoramento e resposta autônoma</p>
+        </div>
+        <div class="header-right">
+          <div class="kpi-pill" id="kpi-autonomy">Nível 2 (Controlado)</div>
+          <div class="kpi-pill" id="kpi-provider">Anthropic Claude</div>
+          <button class="btn btn-outline" id="btn-refresh-all">🔄 Atualizar</button>
+        </div>
+      </header>
+
+      <!-- TAB: VISÃO GERAL -->
+      <section id="tab-overview" class="tab-pane active">
+        <div class="kpi-grid">
+          <div class="kpi-card" onclick="switchTab('tab-incidents')" style="cursor:pointer;">
+            <div class="kpi-title">Total de Incidentes</div>
+            <div class="kpi-value" id="ov-total">0</div>
+            <div class="kpi-sub">Clique para ver todos ↗</div>
+          </div>
+          <div class="kpi-card" onclick="filterBySeverity('CRITICAL')" style="cursor:pointer;">
+            <div class="kpi-title">Incidentes Críticos</div>
+            <div class="kpi-value text-red" id="ov-critical">0</div>
+            <div class="kpi-sub">Requerem atenção imediata</div>
+          </div>
+          <div class="kpi-card" onclick="switchTab('tab-queue')" style="cursor:pointer;">
+            <div class="kpi-title">Aprovações Pendentes</div>
+            <div class="kpi-value text-orange" id="ov-pending">0</div>
+            <div class="kpi-sub">Ações de Risco Médio/Alto</div>
+          </div>
+          <div class="kpi-card" onclick="switchTab('tab-ai-config')" style="cursor:pointer;">
+            <div class="kpi-title">Provedor IA Ativo</div>
+            <div class="kpi-value text-blue" id="ov-provider">Claude Sonnet 4.5</div>
+            <div class="kpi-sub">🟢 Conectado e Operacional</div>
+          </div>
+        </div>
+
+        <div class="content-row">
+          <div class="card flex-2">
+            <div class="card-header">
+              <h3>🚨 Incidentes Recentes</h3>
+              <button class="btn btn-sm btn-primary" onclick="switchTab('tab-incidents')">Explorar Todos os Incidentes ↗</button>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Data/Hora</th>
+                    <th>Servidor</th>
+                    <th>Alerta</th>
+                    <th>Severidade</th>
+                    <th>Status</th>
+                    <th>Ação</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-recent-incidents">
+                  <tr><td colspan="6" class="text-center text-muted">Carregando incidentes...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card flex-1">
+            <div class="card-header">
+              <h3>⚡ Teste Rápido de Ferramenta</h3>
+            </div>
+            <form id="form-quick-tool" class="form-vertical">
+              <div class="form-group">
+                <label>Ferramenta</label>
+                <select id="quick-tool-select" class="form-control">
+                  <option value="consultar_servidor">consultar_servidor()</option>
+                  <option value="consultar_cpu">consultar_cpu()</option>
+                  <option value="consultar_memoria">consultar_memoria()</option>
+                  <option value="consultar_disco">consultar_disco()</option>
+                  <option value="testar_ping">testar_ping()</option>
+                  <option value="consultar_proxmox">consultar_proxmox()</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Alvo / Servidor</label>
+                <select id="quick-host-select" class="form-control">
+                  <option value="pve2-onlitec">pve2-onlitec (172.20.120.128)</option>
+                  <option value="pdm">pdm-onlitec-local (127.0.0.1)</option>
+                  <option value="pbs">pbs-deb12 (100.100.4.115)</option>
+                  <option value="pve1">pve1 (192.168.0.200)</option>
+                  <option value="pve2">pve2 (192.168.0.235)</option>
+                  <option value="pvehi2">pvehi2-hiengenharia (100.112.73.43)</option>
+                  <option value="relayservergerencial">relayservergerencial (100.101.166.8)</option>
+                  <option value="onlihost-vps-8gb">onlihost-vps-8gb (100.111.0.33)</option>
+                  <option value="mikrotik">MikroTik-RB750GR3 (172.20.120.1)</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary btn-block" id="btn-exec-quick">▶ Executar Diagnóstico</button>
+            </form>
+            <div id="quick-tool-output" class="terminal-box" style="display:none; margin-top:15px;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: CENTRAL DE INCIDENTES & DETALHES -->
+      <section id="tab-incidents" class="tab-pane">
+        <div class="card">
+          <!-- BARRA DE FILTROS & BUSCA -->
+          <div class="filter-toolbar">
+            <div class="filter-inputs">
+              <div class="search-box">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="inc-search" class="form-control" placeholder="Buscar por servidor, alerta ou diagnóstico...">
+              </div>
+              <select id="filter-severity" class="form-control filter-select">
+                <option value="ALL">Todas as Severidades</option>
+                <option value="CRITICAL">🔴 Apenas Críticos</option>
+                <option value="WARNING">🟡 Apenas Warnings</option>
+                <option value="INFO">🔵 Apenas Informativos</option>
+              </select>
+              <select id="filter-status" class="form-control filter-select">
+                <option value="ALL">Todos os Status</option>
+                <option value="AGUARDANDO_APROVACAO">⏳ Aguardando Aprovação</option>
+                <option value="RESOLVIDO">🟢 Resolvidos</option>
+                <option value="OBSERVACAO_GERADA">🔍 Diagnosticados</option>
+                <option value="RECUPERADO_ONLINE">🌐 Recuperados Online</option>
+                <option value="SERVIDOR_OFFLINE_SEM_ACAO_IA">🔒 Offline (IA Suprimida - 0 Tokens)</option>
+                <option value="SUPRIMIDO_OFFLINE_LIMITE_ATINGIDO">🛑 Suprimidos (>5 Alertas)</option>
+                <option value="FALHOU">❌ Falhas de Execução</option>
+              </select>
+              <select id="filter-host" class="form-control filter-select">
+                <option value="ALL">Todos os Servidores</option>
+                <!-- Preenchido dinamicamente via JS -->
+              </select>
+            </div>
+            <div class="filter-actions">
+              <button class="btn btn-outline btn-sm" id="btn-clear-resolved">🧹 Limpar Resolvidos</button>
+              <button class="btn btn-outline btn-sm btn-danger" id="btn-clear-all">🗑️ Limpar Todos</button>
+            </div>
+          </div>
+
+          <!-- RESUMO NUMÉRICO -->
+          <div class="incident-stats-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <span>Exibindo <strong id="inc-count-display">0</strong> de <strong id="inc-count-total">0</strong> incidentes</span>
+            <span id="smart-triage-badge" class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 11px; padding: 4px 10px;">
+              🛡️ Smart Triage: <strong id="triage-saved-count">0</strong> chamadas de IA economizadas | <strong id="triage-suppressed-count">0</strong> hosts silenciados
+            </span>
+          </div>
+
+          <!-- CONTAINER DOS CARDS DE INCIDENTES -->
+          <div id="incidents-container" class="incidents-grid">
+            <!-- Cards gerados dinamicamente via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: FILA DE APROVAÇÃO -->
+      <section id="tab-queue" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>⏳ Ações Pendentes de Autorização Humana</h3>
+              <p class="text-muted">Ações de Risco Médio e Alto identificadas pelo ONLI-AIOPS aguardando seu aval</p>
+            </div>
+          </div>
+          <div id="approval-queue-list" class="queue-container">
+            <!-- Gerado via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: PROVEDORES & IA -->
+      <section id="tab-ai-config" class="tab-pane">
+        <div class="card max-w-800">
+          <div class="card-header">
+            <div>
+              <h3>🤖 Configuração do Provedor de Inteligência Artificial</h3>
+              <p class="text-muted">Alterne provedores, atualize chaves de API e ajuste os parâmetros do modelo</p>
+            </div>
+          </div>
+          <form id="form-ai-config" class="form-vertical">
+            <div class="form-group">
+              <label>Provedor de IA</label>
+              <select id="cfg-provider" class="form-control">
+                <option value="claude">Anthropic Claude (Recomendado - Claude Sonnet 4.5)</option>
+                <option value="gemini">Google Gemini (Gemini 1.5 Flash / Pro)</option>
+                <option value="openai">OpenAI GPT (GPT-4o / GPT-4o-mini)</option>
+                <option value="groq">Groq (Llama 3.3 70B - Latência Ultrabaixa)</option>
+                <option value="ollama">Ollama (Modelo Local Self-Hosted)</option>
+                <option value="openrouter">OpenRouter (Roteador Universal)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Chave de API (API Key)</label>
+              <div class="input-action-group">
+                <input type="password" id="cfg-api-key" class="form-control" placeholder="Cole sua chave aqui (ex: sk-ant-... ou AIzaSy...)">
+                <button type="button" class="btn btn-outline" id="btn-toggle-key-visibility">👁️</button>
+              </div>
+              <small class="text-muted" id="cfg-key-hint">Chave cadastrada e ativa.</small>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>Modelo Específico</label>
+                <input type="text" id="cfg-model" class="form-control" placeholder="claude-sonnet-4-5-20250929">
+              </div>
+              <div class="form-group flex-1">
+                <label>Temperatura (Criatividade vs Precisão)</label>
+                <input type="number" id="cfg-temp" class="form-control" min="0.0" max="1.0" step="0.1" value="0.2">
+              </div>
+            </div>
+
+            <div class="form-group" id="group-base-url" style="display:none;">
+              <label>Base URL Customizada (Para Ollama / Proxies)</label>
+              <input type="text" id="cfg-base-url" class="form-control" placeholder="http://localhost:11434/api/generate">
+            </div>
+
+            <div class="form-actions">
+              <button type="button" class="btn btn-outline" id="btn-test-ai-conn">🧪 Testar Conexão com a IA</button>
+              <button type="submit" class="btn btn-primary" id="btn-save-ai-cfg">💾 Salvar Configurações</button>
+            </div>
+            <div id="ai-test-result" class="alert-box" style="display:none; margin-top:15px;"></div>
+          </form>
+        </div>
+      </section>
+
+      <!-- TAB: PROMPTS & RUNBOOKS -->
+      <section id="tab-prompts" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>📝 Editor do System Prompt Mestre (22 Princípios)</h3>
+              <p class="text-muted">As instruções comportamentais e limites operacionais do agente</p>
+            </div>
+            <button class="btn btn-sm btn-outline" id="btn-restore-prompt">Restaurar Padrão</button>
+          </div>
+          <form id="form-prompt" class="form-vertical">
+            <div class="form-group">
+              <textarea id="txt-system-prompt" class="code-editor" rows="16"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">💾 Salvar System Prompt</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card" style="margin-top:20px;">
+          <div class="card-header">
+            <h3>📖 Catálogo de Runbooks Aprovados</h3>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Runbook</th>
+                  <th>Descrição</th>
+                  <th>Nível de Risco</th>
+                  <th>Alvos / Serviços Autorizados</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-runbooks">
+                <!-- Preenchido dinamicamente via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: AUTONOMIA & REGRAS -->
+      <section id="tab-autonomy" class="tab-pane">
+        <div class="card max-w-800">
+          <div class="card-header">
+            <div>
+              <h3>🛡️ Níveis de Autonomia e Governança Operacional</h3>
+              <p class="text-muted">Defina até onde o agente pode agir automaticamente sem intervenção humana</p>
+            </div>
+          </div>
+          <form id="form-autonomy" class="form-vertical">
+            <div class="radio-card-group">
+              <label class="radio-card">
+                <input type="radio" name="autonomy_level" value="OBSERVATION">
+                <div class="radio-card-content">
+                  <div class="radio-title">🟢 Nível 1: Apenas Observação & Diagnóstico</div>
+                  <div class="radio-desc">O agente analisa alertas, investiga causas e gera relatórios, mas NUNCA executa alterações ou reinicia serviços.</div>
+                </div>
+              </label>
+
+              <label class="radio-card">
+                <input type="radio" name="autonomy_level" value="CONTROLLED" checked>
+                <div class="radio-card-content">
+                  <div class="radio-title">🟡 Nível 2: Automação Controlada (Recomendado)</div>
+                  <div class="radio-desc">Executa automaticamente ações de Baixo Risco aprovadas (restart de node_exporter, limpeza de temp). Ações de Médio/Alto Risco vão para a Fila de Aprovação.</div>
+                </div>
+              </label>
+
+              <label class="radio-card">
+                <input type="radio" name="autonomy_level" value="STRICT_APPROVAL">
+                <div class="radio-card-content">
+                  <div class="radio-title">🔴 Nível 3: Aprovação Estrita</div>
+                  <div class="radio-desc">Toda e qualquer intervenção física no servidor exige autorização humana prévia no painel web.</div>
+                </div>
+              </label>
+            </div>
+
+            <div class="form-row" style="margin-top:20px;">
+              <div class="form-group flex-1">
+                <label>Máximo de Tentativas Automáticas (Prevenção de Loop)</label>
+                <input type="number" id="cfg-max-retries" class="form-control" value="2" min="1" max="5">
+              </div>
+              <div class="form-group flex-1">
+                <label>Estado Geral do Agente</label>
+                <select id="cfg-is-active" class="form-control">
+                  <option value="true">🟢 Ativo (Processando Incidentes)</option>
+                  <option value="false">⏸️ Pausado (Ignorar Webhooks)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">💾 Salvar Políticas de Autonomia</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- TAB: CHAT / TERMINAL IA -->
+      <section id="tab-chat" class="tab-pane">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages">
+            <div class="chat-msg system">
+              <div class="msg-author">🤖 ONLI-AIOPS (Claude Sonnet 4.5)</div>
+              <div class="msg-body">
+                Olá! Sou o agente autônomo de infraestrutura ONLI-AIOPS. Como posso ajudar? Você pode me solicitar diagnósticos em servidores Proxmox, checagem de logs, status de storages ou investigação de anomalias.
+              </div>
+            </div>
+          </div>
+          <form id="form-chat" class="chat-input-row">
+            <input type="text" id="chat-input" class="form-control" placeholder="Digite uma solicitação operacional (ex: Como está a saúde do storage no Proxmox PVE1?)...">
+            <button type="submit" class="btn btn-primary" id="btn-send-chat">Enviar 🚀</button>
+          </form>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL DE DETALHES COMPLETOS DO INCIDENTE -->
+  <div id="incident-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-area">
+          <span class="modal-badge-id" id="m-inc-id">#ID</span>
+          <h2 id="m-inc-title">Nome do Alerta</h2>
+          <span class="modal-host" id="m-inc-host">Servidor</span>
+        </div>
+        <button class="modal-close" onclick="closeIncidentModal()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- METADADOS RÁPIDOS -->
+        <div class="modal-meta-grid">
+          <div class="meta-item">
+            <span class="meta-label">Severidade</span>
+            <span class="meta-val" id="m-inc-severity">CRITICAL</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Nível de Risco</span>
+            <span class="meta-val" id="m-inc-risk">MÉDIO</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Status Atual</span>
+            <span class="meta-val" id="m-inc-status">PROCESSADO</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Data e Horário</span>
+            <span class="meta-val" id="m-inc-time">15/08/2026 12:45:00</span>
+          </div>
+        </div>
+
+        <!-- DIAGNÓSTICO DA IA -->
+        <div class="modal-section">
+          <div class="section-badge">🧠 Diagnóstico do ONLI-AIOPS</div>
+          <div class="markdown-content" id="m-inc-diagnosis">Carregando diagnóstico...</div>
+        </div>
+
+        <!-- HIPÓTESES FORMULADAS -->
+        <div class="modal-section" id="m-section-hypotheses">
+          <div class="section-badge">💡 Hipóteses Formuladas</div>
+          <ul class="hypotheses-list" id="m-inc-hypotheses">
+            <!-- Preenchido via JS -->
+          </ul>
+        </div>
+
+        <!-- EVIDÊNCIAS COLETADAS -->
+        <div class="modal-section">
+          <div class="section-badge">🔍 Evidências Coletadas do Servidor</div>
+          <div class="evidence-box" id="m-inc-evidence">
+            <!-- Abas de evidência ou JSON -->
+          </div>
+        </div>
+
+        <!-- AÇÃO PROPOSTA / EXECUTADA -->
+        <div class="modal-section" id="m-section-action">
+          <div class="section-badge">🛠️ Ação / Ferramenta do Gateway</div>
+          <div class="action-box" id="m-inc-action">
+            <!-- Preenchido via JS -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-modal-retest">🔄 Diagnosticar Novamente Agora</button>
+        <div class="modal-footer-right" id="modal-footer-actions">
+          <!-- Botões dinâmicos de aprovar/rejeitar -->
+          <button class="btn btn-outline" onclick="closeIncidentModal()">Fechar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
